@@ -7,14 +7,13 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz_types::VariableList;
 use tree_hash::{PackedEncoding, TreeHash};
 
-use super::{spec::EthSpec, DenebSpec};
+use super::spec::EthSpec;
 
 pub const BYTES_PER_COMMITMENT: usize = 48;
 #[derive(Clone, Eq, PartialEq)]
 pub struct KzgCommitment(pub [u8; BYTES_PER_COMMITMENT]);
-// TODO: this is not ideal but works because Electra and Deneb have the same
-pub type KzgCommitments =
-    VariableList<KzgCommitment, <DenebSpec as EthSpec>::MaxBlobCommitmentsPerBlock>;
+pub type KzgCommitments<T> =
+    VariableList<KzgCommitment, <T as EthSpec>::MaxBlobCommitmentsPerBlock>;
 
 impl From<KzgCommitment> for [u8; 48] {
     fn from(value: KzgCommitment) -> Self {
@@ -75,21 +74,17 @@ impl FromStr for KzgCommitment {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(stripped) = s.strip_prefix("0x") {
-            let bytes = alloy::primitives::hex::decode(stripped).map_err(|e| e.to_string())?;
-            if bytes.len() == BYTES_PER_COMMITMENT {
-                let mut kzg_commitment_bytes = [0; BYTES_PER_COMMITMENT];
-                kzg_commitment_bytes[..].copy_from_slice(&bytes);
-                Ok(Self(kzg_commitment_bytes))
-            } else {
-                Err(format!(
-                    "InvalidByteLength: got {}, expected {}",
-                    bytes.len(),
-                    BYTES_PER_COMMITMENT
-                ))
-            }
+        let bytes = alloy::primitives::hex::decode(s).map_err(|e| e.to_string())?;
+        if bytes.len() == BYTES_PER_COMMITMENT {
+            let mut kzg_commitment_bytes = [0; BYTES_PER_COMMITMENT];
+            kzg_commitment_bytes[..].copy_from_slice(&bytes);
+            Ok(Self(kzg_commitment_bytes))
         } else {
-            Err("must start with 0x".to_string())
+            Err(format!(
+                "InvalidByteLength: got {}, expected {}",
+                bytes.len(),
+                BYTES_PER_COMMITMENT
+            ))
         }
     }
 }
@@ -142,17 +137,13 @@ impl FromStr for KzgProof {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(stripped) = s.strip_prefix("0x") {
-            let bytes = alloy::primitives::hex::decode(stripped).map_err(|e| e.to_string())?;
-            if bytes.len() == BYTES_PER_PROOF {
-                let mut kzg_proof_bytes = [0; BYTES_PER_PROOF];
-                kzg_proof_bytes[..].copy_from_slice(&bytes);
-                Ok(Self(kzg_proof_bytes))
-            } else {
-                Err(format!("InvalidByteLength: got {}, expected {}", bytes.len(), BYTES_PER_PROOF))
-            }
+        let bytes = alloy::primitives::hex::decode(s).map_err(|e| e.to_string())?;
+        if bytes.len() == BYTES_PER_PROOF {
+            let mut kzg_proof_bytes = [0; BYTES_PER_PROOF];
+            kzg_proof_bytes[..].copy_from_slice(&bytes);
+            Ok(Self(kzg_proof_bytes))
         } else {
-            Err("must start with 0x".to_string())
+            Err(format!("InvalidByteLength: got {}, expected {}", bytes.len(), BYTES_PER_PROOF))
         }
     }
 }

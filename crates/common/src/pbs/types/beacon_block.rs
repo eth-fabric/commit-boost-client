@@ -3,8 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     blinded_block_body::BlindedBeaconBlockBody, blobs_bundle::BlobsBundle,
-    execution_payload::ExecutionPayload, utils::VersionedResponse, DenebSpec, ElectraSpec,
-    KzgCommitments,
+    execution_payload::ExecutionPayload, utils::VersionedResponse, DenebSpec, ElectraSpec, EthSpec,
 };
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -38,11 +37,12 @@ pub struct BlindedBeaconBlock {
     pub body: VersionedBlindedBeaconBlockBody,
 }
 
+// TODO: check deserialization
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum VersionedBlindedBeaconBlockBody {
-    Deneb(BlindedBeaconBlockBody<DenebSpec>),
     Electra(BlindedBeaconBlockBody<ElectraSpec>),
+    Deneb(BlindedBeaconBlockBody<DenebSpec>),
 }
 
 impl Default for VersionedBlindedBeaconBlockBody {
@@ -70,21 +70,21 @@ impl VersionedBlindedBeaconBlockBody {
         }
     }
 
-    pub fn kzg_commitments(&self) -> &KzgCommitments {
+    pub fn version(&self) -> &str {
         match self {
-            VersionedBlindedBeaconBlockBody::Deneb(body) => &body.blob_kzg_commitments,
-            VersionedBlindedBeaconBlockBody::Electra(body) => &body.blob_kzg_commitments,
+            VersionedBlindedBeaconBlockBody::Deneb(_) => "deneb",
+            VersionedBlindedBeaconBlockBody::Electra(_) => "electra",
         }
     }
 }
 /// Returned by relay in submit_block
-/// Blinded block response is the same in Deneb / Electra
-pub type SubmitBlindedBlockResponse = VersionedResponse<PayloadAndBlobs, PayloadAndBlobs>;
+pub type SubmitBlindedBlockResponse =
+    VersionedResponse<PayloadAndBlobs<DenebSpec>, PayloadAndBlobs<ElectraSpec>>;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct PayloadAndBlobs {
-    pub execution_payload: ExecutionPayload<DenebSpec>,
-    pub blobs_bundle: Option<BlobsBundle<DenebSpec>>,
+pub struct PayloadAndBlobs<T: EthSpec> {
+    pub execution_payload: ExecutionPayload<T>,
+    pub blobs_bundle: Option<BlobsBundle<T>>,
 }
 
 impl SubmitBlindedBlockResponse {
@@ -100,7 +100,7 @@ impl SubmitBlindedBlockResponse {
 mod tests {
     use serde_json::json;
 
-    use super::{SignedBlindedBeaconBlock, SubmitBlindedBlockResponse};
+    use super::SignedBlindedBeaconBlock;
     use crate::utils::test_encode_decode;
 
     #[test]
@@ -301,7 +301,8 @@ mod tests {
         "signature": "0x1b66ac1fb663c9bc59509846d6ec05345bd908eda73e670af888da41af171505cc411d61252fb6cb3fa0017b679f8bb2305b26a285fa2737f175668d0dff91cc1b66ac1fb663c9bc59509846d6ec05345bd908eda73e670af888da41af171505"
       }"#;
 
-        test_encode_decode::<SignedBlindedBeaconBlock>(&data);
+        let x = test_encode_decode::<SignedBlindedBeaconBlock>(&data);
+        println!("{:?}", x.message.body.version());
     }
 
     #[test]
@@ -615,7 +616,8 @@ mod tests {
           "signature": "0x8c3095fd9d3a18e43ceeb7648281e16bb03044839dffea796432c4e5a1372bef22c11a98a31e0c1c5389b98cc6d45917170a0f1634bcf152d896f360dc599fabba2ec4de77898b5dff080fa1628482bdbad5b37d2e64fea3d8721095186cfe50"
         }"#;
 
-        test_encode_decode::<SignedBlindedBeaconBlock>(&data);
+        let x = test_encode_decode::<SignedBlindedBeaconBlock>(&data);
+        println!("{:?}", x.message.body.version());
     }
 
     #[test]
@@ -673,7 +675,8 @@ mod tests {
           }
         }).to_string();
 
-        test_encode_decode::<SubmitBlindedBlockResponse>(&data);
+        let x = test_encode_decode::<SignedBlindedBeaconBlock>(&data);
+        println!("{:?}", x.message.body.version());
     }
 
     #[test]
@@ -752,6 +755,7 @@ mod tests {
             "signature": "0x94cd72a70a0b424f68145115a9a52f6c8557fb40ec8b67c26cbb9b324b72756624a59e8bbe11b78acbbb8e9c606035d10c0dab9a3f4177d7e6954f8ea1863d0b0b00007fb420b4b4cf52e065bda0ad32af0d3a71bd6938180bab6dd1af754d2f"
         }"#;
 
-        test_encode_decode::<SignedBlindedBeaconBlock>(&data);
+        let x = test_encode_decode::<SignedBlindedBeaconBlock>(&data);
+        println!("{:?}", x.message.body.version());
     }
 }

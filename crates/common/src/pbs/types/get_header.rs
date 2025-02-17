@@ -128,7 +128,7 @@ pub struct SignedExecutionPayloadHeader<T> {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, TreeHash)]
 pub struct ExecutionPayloadHeaderMessageDeneb {
     pub header: ExecutionPayloadHeader<DenebSpec>,
-    pub blob_kzg_commitments: KzgCommitments,
+    pub blob_kzg_commitments: KzgCommitments<DenebSpec>,
     #[serde(with = "serde_utils::quoted_u256")]
     pub value: U256,
     pub pubkey: BlsPublicKey,
@@ -137,7 +137,7 @@ pub struct ExecutionPayloadHeaderMessageDeneb {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, TreeHash)]
 pub struct ExecutionPayloadHeaderMessageElectra {
     pub header: ExecutionPayloadHeader<ElectraSpec>,
-    pub blob_kzg_commitments: KzgCommitments,
+    pub blob_kzg_commitments: KzgCommitments<ElectraSpec>,
     pub execution_requests: ExecutionRequests<ElectraSpec>,
     #[serde(with = "serde_utils::quoted_u256")]
     pub value: U256,
