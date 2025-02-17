@@ -7,13 +7,14 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz_types::VariableList;
 use tree_hash::{PackedEncoding, TreeHash};
 
-use super::spec::EthSpec;
+use super::{spec::EthSpec, DenebSpec};
 
 pub const BYTES_PER_COMMITMENT: usize = 48;
 #[derive(Clone, Eq, PartialEq)]
 pub struct KzgCommitment(pub [u8; BYTES_PER_COMMITMENT]);
-pub type KzgCommitments<T> =
-    VariableList<KzgCommitment, <T as EthSpec>::MaxBlobCommitmentsPerBlock>;
+// TODO: this is not ideal but works because Electra and Deneb have the same
+pub type KzgCommitments =
+    VariableList<KzgCommitment, <DenebSpec as EthSpec>::MaxBlobCommitmentsPerBlock>;
 
 impl From<KzgCommitment> for [u8; 48] {
     fn from(value: KzgCommitment) -> Self {

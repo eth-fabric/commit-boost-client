@@ -26,7 +26,7 @@ pub struct BlindedBeaconBlockBody<T: EthSpec> {
     pub execution_payload_header: ExecutionPayloadHeader<T>,
     pub bls_to_execution_changes:
         VariableList<SignedBlsToExecutionChange, T::MaxBlsToExecutionChanges>,
-    pub blob_kzg_commitments: KzgCommitments<T>,
+    pub blob_kzg_commitments: KzgCommitments,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_requests: Option<ExecutionRequests<T>>,
 }

@@ -3,10 +3,16 @@ use alloy::{
     rpc::types::beacon::{BlsPublicKey, BlsSignature},
 };
 use serde::{Deserialize, Serialize};
+use tree_hash_derive::TreeHash;
+
+use crate::{
+    constants::APPLICATION_BUILDER_DOMAIN, error::BlstErrorWrapper,
+    signature::verify_signed_message, types::Chain,
+};
 
 use super::{
     execution_payload::ExecutionPayloadHeader, kzg::KzgCommitments, utils::VersionedResponse,
-    EthSpec, ExecutionRequests,
+    DenebSpec, ElectraSpec, ExecutionRequests,
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -20,68 +26,122 @@ pub struct GetHeaderParams {
 }
 
 /// Returned by relay in get_header
-#[allow(type_alias_bounds)]
-pub type GetHeaderResponse<T: EthSpec> = VersionedResponse<SignedExecutionPayloadHeader<T>>;
+pub type GetHeaderResponse = VersionedResponse<
+    SignedExecutionPayloadHeader<ExecutionPayloadHeaderMessageDeneb>,
+    SignedExecutionPayloadHeader<ExecutionPayloadHeaderMessageElectra>,
+>;
 
-impl<T: EthSpec> GetHeaderResponse<T> {
+impl GetHeaderResponse {
+    /// Block hash
     pub fn block_hash(&self) -> B256 {
-        self.data.message.header.block_hash
+        match &self {
+            GetHeaderResponse::Deneb(h) => h.message.header.block_hash,
+            GetHeaderResponse::Electra(h) => h.message.header.block_hash,
+        }
     }
 
+    pub fn block_number(&self) -> u64 {
+        match &self {
+            GetHeaderResponse::Deneb(h) => h.message.header.block_number,
+            GetHeaderResponse::Electra(h) => h.message.header.block_number,
+        }
+    }
+
+    pub fn gas_limit(&self) -> u64 {
+        match &self {
+            GetHeaderResponse::Deneb(h) => h.message.header.gas_limit,
+            GetHeaderResponse::Electra(h) => h.message.header.gas_limit,
+        }
+    }
+
+    /// Pubkey of the builer/relay that signed the bid
     pub fn pubkey(&self) -> BlsPublicKey {
-        self.data.message.pubkey
+        match &self {
+            GetHeaderResponse::Deneb(h) => h.message.pubkey,
+            GetHeaderResponse::Electra(h) => h.message.pubkey,
+        }
     }
 
+    /// Bid value
     pub fn value(&self) -> U256 {
-        self.data.message.value
+        match &self {
+            GetHeaderResponse::Deneb(h) => h.message.value,
+            GetHeaderResponse::Electra(h) => h.message.value,
+        }
+    }
+
+    pub fn tx_root(&self) -> B256 {
+        match &self {
+            GetHeaderResponse::Deneb(h) => h.message.header.transactions_root,
+            GetHeaderResponse::Electra(h) => h.message.header.transactions_root,
+        }
+    }
+
+    pub fn parent_hash(&self) -> B256 {
+        match &self {
+            GetHeaderResponse::Deneb(h) => h.message.header.parent_hash,
+            GetHeaderResponse::Electra(h) => h.message.header.parent_hash,
+        }
+    }
+
+    pub fn timestamp(&self) -> u64 {
+        match &self {
+            GetHeaderResponse::Deneb(h) => h.message.header.timestamp,
+            GetHeaderResponse::Electra(h) => h.message.header.timestamp,
+        }
+    }
+
+    /// Signature of the builder/relay that signed the bid
+    pub fn signature(&self) -> BlsSignature {
+        match &self {
+            GetHeaderResponse::Deneb(h) => h.signature,
+            GetHeaderResponse::Electra(h) => h.signature,
+        }
+    }
+
+    pub fn verify_signature(&self, chain: Chain) -> Result<(), BlstErrorWrapper> {
+        match self {
+            GetHeaderResponse::Deneb(h) => verify_signed_message(
+                chain,
+                &h.message.pubkey,
+                &h.message,
+                &h.signature,
+                APPLICATION_BUILDER_DOMAIN,
+            ),
+            GetHeaderResponse::Electra(h) => verify_signed_message(
+                chain,
+                &h.message.pubkey,
+                &h.message,
+                &h.signature,
+                APPLICATION_BUILDER_DOMAIN,
+            ),
+        }
     }
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct SignedExecutionPayloadHeader<T: EthSpec> {
-    pub message: ExecutionPayloadHeaderMessage<T>,
+pub struct SignedExecutionPayloadHeader<T> {
+    pub message: T,
     pub signature: BlsSignature,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-#[serde(bound = "T: EthSpec")]
-pub struct ExecutionPayloadHeaderMessage<T: EthSpec> {
-    pub header: ExecutionPayloadHeader<T>,
-    pub blob_kzg_commitments: KzgCommitments<T>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub execution_requests: Option<ExecutionRequests<T>>,
+#[derive(Debug, Default, Clone, Serialize, Deserialize, TreeHash)]
+pub struct ExecutionPayloadHeaderMessageDeneb {
+    pub header: ExecutionPayloadHeader<DenebSpec>,
+    pub blob_kzg_commitments: KzgCommitments,
     #[serde(with = "serde_utils::quoted_u256")]
     pub value: U256,
     pub pubkey: BlsPublicKey,
 }
 
-impl<T: EthSpec> tree_hash::TreeHash for ExecutionPayloadHeaderMessage<T> {
-    fn tree_hash_type() -> tree_hash::TreeHashType {
-        tree_hash::TreeHashType::Container
-    }
-
-    fn tree_hash_packed_encoding(&self) -> tree_hash::PackedEncoding {
-        unreachable!("Struct should never be packed.")
-    }
-
-    fn tree_hash_packing_factor() -> usize {
-        unreachable!("Struct should never be packed.")
-    }
-
-    fn tree_hash_root(&self) -> tree_hash::Hash256 {
-        let leaves = 4 + usize::from(self.execution_requests.is_some());
-        let mut hasher = tree_hash::MerkleHasher::with_leaves(leaves);
-        let _ = hasher.write(self.header.tree_hash_root().as_slice());
-        let _ = hasher.write(self.blob_kzg_commitments.tree_hash_root().as_slice());
-        if let Some(reqs) = &self.execution_requests {
-            let _ = hasher.write(reqs.tree_hash_root().as_slice());
-        }
-        let _ = hasher.write(self.value.tree_hash_root().as_slice());
-        let _ = hasher.write(self.pubkey.tree_hash_root().as_slice());
-        // Note expect() is how the tree_hash_derive crate handles errors.
-        // https://docs.rs/tree_hash_derive/latest/src/tree_hash_derive/lib.rs.html#138
-        hasher.finish().expect("tree hash derive should not have a remaining buffer")
-    }
+#[derive(Debug, Default, Clone, Serialize, Deserialize, TreeHash)]
+pub struct ExecutionPayloadHeaderMessageElectra {
+    pub header: ExecutionPayloadHeader<ElectraSpec>,
+    pub blob_kzg_commitments: KzgCommitments,
+    pub execution_requests: ExecutionRequests<ElectraSpec>,
+    #[serde(with = "serde_utils::quoted_u256")]
+    pub value: U256,
+    pub pubkey: BlsPublicKey,
 }
 
 #[cfg(test)]
@@ -89,13 +149,7 @@ mod tests {
     use alloy::primitives::U256;
 
     use super::GetHeaderResponse;
-    use crate::{
-        constants::APPLICATION_BUILDER_DOMAIN,
-        pbs::{DenebSpec, ElectraSpec},
-        signature::verify_signed_message,
-        types::Chain,
-        utils::test_encode_decode,
-    };
+    use crate::{types::Chain, utils::test_encode_decode};
 
     #[test]
     fn test_get_header_deneb() {
@@ -137,18 +191,12 @@ mod tests {
             }
         }"#;
 
-        let parsed = test_encode_decode::<GetHeaderResponse<DenebSpec>>(&data).data;
+        let parsed = test_encode_decode::<GetHeaderResponse>(&data);
+        assert!(parsed.is_deneb());
 
-        assert_eq!(parsed.message.value, U256::from(4293912964927787u64));
+        assert_eq!(parsed.value(), U256::from(4293912964927787u64));
 
-        assert!(verify_signed_message(
-            Chain::Holesky,
-            &parsed.message.pubkey.into(),
-            &parsed.message,
-            &parsed.signature,
-            APPLICATION_BUILDER_DOMAIN
-        )
-        .is_ok())
+        assert!(parsed.verify_signature(Chain::Holesky).is_ok());
     }
 
     #[test]
@@ -196,9 +244,12 @@ mod tests {
             }
         }"#;
 
-        let parsed = test_encode_decode::<GetHeaderResponse<ElectraSpec>>(&data).data;
+        let parsed = test_encode_decode::<GetHeaderResponse>(&data);
+        assert!(parsed.is_electra());
 
-        assert_eq!(parsed.message.value, U256::from(4293912964927787u64));
+        assert_eq!(parsed.value(), U256::from(4293912964927787u64));
+
+        // assert!(parsed.verify_signature(Chain::Holesky).is_ok());
 
         // todo uncomment when there is a test vector with a valid signature
         // assert!(verify_signed_message(

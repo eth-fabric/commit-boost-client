@@ -24,6 +24,7 @@ pub trait EthSpec: 'static + Default + Clone + Debug + Send + Sync + Serialize {
     type BytesPerBlob: Unsigned + Clone + Debug + Send + Sync;
     type MaxBlobsPerBlock: Unsigned + Clone + Debug + Send + Sync;
     type MaxCommitteesPerSlot: Unsigned + Clone + Debug + Send + Sync;
+
     // New in Electra
     type PendingBalanceDepositsLimit: Unsigned + Clone + Debug + Send + Sync;
     type PendingPartialWithdrawalsLimit: Unsigned + Clone + Debug + Send + Sync;
@@ -66,7 +67,7 @@ impl EthSpec for DenebSpec {
     type MaxDepositRequestsPerPayload = U0;
     type MaxWithdrawalRequestsPerPayload = U0;
 
-    // MAX_VALIDATORS_PER_COMMITTEE
+    // same as MAX_VALIDATORS_PER_COMMITTEE
     type MaxValidatorsPerCommitteeWithSlot = U2048;
 }
 

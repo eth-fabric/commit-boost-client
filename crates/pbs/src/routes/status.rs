@@ -1,28 +1,25 @@
 use axum::{extract::State, http::HeaderMap, response::IntoResponse};
-use cb_common::{
-    pbs::{BuilderEvent, EthSpec},
-    utils::get_user_agent,
-};
+use cb_common::{pbs::BuilderEvent, utils::get_user_agent};
 use reqwest::StatusCode;
 use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::{
-    api::BuilderApi,
     constants::STATUS_ENDPOINT_TAG,
     error::PbsClientError,
     metrics::BEACON_NODE_STATUS,
     state::{BuilderApiState, PbsStateGuard},
+    BuilderApi,
 };
 
 #[tracing::instrument(skip_all, name = "status", fields(req_id = %Uuid::new_v4()))]
-pub async fn handle_get_status<S: BuilderApiState, T: EthSpec, A: BuilderApi<S, T>>(
+pub async fn handle_get_status<S: BuilderApiState, A: BuilderApi<S>>(
     req_headers: HeaderMap,
     State(state): State<PbsStateGuard<S>>,
 ) -> Result<impl IntoResponse, PbsClientError> {
     let state = state.read().clone();
 
-    state.publish_event(BuilderEvent::<T>::GetStatusEvent);
+    state.publish_event(BuilderEvent::GetStatusEvent);
 
     let ua = get_user_agent(&req_headers);
 
@@ -30,7 +27,7 @@ pub async fn handle_get_status<S: BuilderApiState, T: EthSpec, A: BuilderApi<S, 
 
     match A::get_status(req_headers, state.clone()).await {
         Ok(_) => {
-            state.publish_event(BuilderEvent::<T>::GetStatusResponse);
+            state.publish_event(BuilderEvent::GetStatusResponse);
             info!("relay check successful");
 
             BEACON_NODE_STATUS.with_label_values(&["200", STATUS_ENDPOINT_TAG]).inc();

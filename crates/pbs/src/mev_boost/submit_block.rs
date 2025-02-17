@@ -4,14 +4,13 @@ use axum::http::{HeaderMap, HeaderValue};
 use cb_common::{
     pbs::{
         error::{PbsError, ValidationError},
-        EthSpec, RelayClient, SignedBlindedBeaconBlock, SubmitBlindedBlockResponse,
+        RelayClient, SignedBlindedBeaconBlock, SubmitBlindedBlockResponse,
         HEADER_START_TIME_UNIX_MS,
     },
     utils::{get_user_agent_with_version, utcnow_ms},
 };
 use futures::future::select_ok;
 use reqwest::header::USER_AGENT;
-use serde::Deserialize;
 use tracing::{debug, warn};
 use url::Url;
 
@@ -23,14 +22,11 @@ use crate::{
 };
 
 /// Implements https://ethereum.github.io/builder-specs/#/Builder/submitBlindedBlock
-pub async fn submit_block<S: BuilderApiState, T>(
-    signed_blinded_block: SignedBlindedBeaconBlock<T>,
+pub async fn submit_block<S: BuilderApiState>(
+    signed_blinded_block: SignedBlindedBeaconBlock,
     req_headers: HeaderMap,
     state: PbsState<S>,
-) -> eyre::Result<SubmitBlindedBlockResponse<T>>
-where
-    T: EthSpec + for<'de> Deserialize<'de>,
-{
+) -> eyre::Result<SubmitBlindedBlockResponse> {
     // prepare headers
     let mut send_headers = HeaderMap::new();
     send_headers.insert(HEADER_START_TIME_UNIX_MS, HeaderValue::from(utcnow_ms()));
@@ -56,15 +52,12 @@ where
 
 /// Submit blinded block to relay, retry connection errors until the
 /// given timeout has passed
-async fn submit_block_with_timeout<T>(
-    signed_blinded_block: &SignedBlindedBeaconBlock<T>,
+async fn submit_block_with_timeout(
+    signed_blinded_block: &SignedBlindedBeaconBlock,
     relay: &RelayClient,
     headers: HeaderMap,
     timeout_ms: u64,
-) -> Result<SubmitBlindedBlockResponse<T>, PbsError>
-where
-    T: EthSpec + for<'de> Deserialize<'de>,
-{
+) -> Result<SubmitBlindedBlockResponse, PbsError> {
     let url = relay.submit_block_url()?;
     let mut remaining_timeout_ms = timeout_ms;
     let mut retry = 0;
@@ -106,17 +99,14 @@ where
 // submits blinded signed block and expects the execution payload + blobs bundle
 // back
 #[tracing::instrument(skip_all, name = "handler", fields(relay_id = relay.id.as_ref(), retry = retry))]
-async fn send_submit_block<T>(
+async fn send_submit_block(
     url: Url,
-    signed_blinded_block: &SignedBlindedBeaconBlock<T>,
+    signed_blinded_block: &SignedBlindedBeaconBlock,
     relay: &RelayClient,
     headers: HeaderMap,
     timeout_ms: u64,
     retry: u32,
-) -> Result<SubmitBlindedBlockResponse<T>, PbsError>
-where
-    T: EthSpec + for<'de> Deserialize<'de>,
-{
+) -> Result<SubmitBlindedBlockResponse, PbsError> {
     let start_request = Instant::now();
     let res = match relay
         .client
@@ -161,18 +151,19 @@ where
         return Err(err);
     };
 
-    let block_response =
-        match serde_json::from_slice::<SubmitBlindedBlockResponse<T>>(&response_bytes) {
-            Ok(parsed) => parsed,
-            Err(err) => {
-                return Err(PbsError::JsonDecode {
-                    err,
-                    raw: String::from_utf8_lossy(&response_bytes).into_owned(),
-                });
-            }
-        };
+    let block_response = match serde_json::from_slice::<SubmitBlindedBlockResponse>(&response_bytes)
+    {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            return Err(PbsError::JsonDecode {
+                err,
+                raw: String::from_utf8_lossy(&response_bytes).into_owned(),
+            });
+        }
+    };
 
     debug!(
+        version = ?block_response.version(),
         latency = ?request_latency,
         block_hash = %block_response.block_hash(),
         "received unblinded block"
@@ -185,11 +176,16 @@ where
         }));
     }
 
-    if let Some(blobs) = &block_response.data.blobs_bundle {
-        let expected_committments = &signed_blinded_block.message.body.blob_kzg_commitments;
-        if expected_committments.len() != blobs.blobs.len() ||
-            expected_committments.len() != blobs.commitments.len() ||
-            expected_committments.len() != blobs.proofs.len()
+    let blobs_bundle = match &block_response {
+        SubmitBlindedBlockResponse::Deneb(payload) => &payload.blobs_bundle,
+        SubmitBlindedBlockResponse::Electra(payload) => &payload.blobs_bundle,
+    };
+
+    if let Some(blobs) = &blobs_bundle {
+        let expected_committments = signed_blinded_block.message.body.kzg_commitments();
+        if expected_committments.len() != blobs.blobs.len()
+            || expected_committments.len() != blobs.commitments.len()
+            || expected_committments.len() != blobs.proofs.len()
         {
             return Err(PbsError::Validation(ValidationError::KzgCommitments {
                 expected_blobs: expected_committments.len(),

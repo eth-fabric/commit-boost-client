@@ -9,7 +9,7 @@ use super::{
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(bound = "T: EthSpec")]
 pub struct BlobsBundle<T: EthSpec> {
-    pub commitments: KzgCommitments<T>,
+    pub commitments: KzgCommitments,
     pub proofs: KzgProofs<T>,
     #[serde(with = "ssz_types::serde_utils::list_of_hex_fixed_vec")]
     pub blobs: VariableList<Blob<T>, <T as EthSpec>::MaxBlobCommitmentsPerBlock>,
