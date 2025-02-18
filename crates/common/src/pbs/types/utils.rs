@@ -29,17 +29,28 @@ pub mod quoted_variable_list_u64 {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct VersionedResponse<T> {
-    pub version: Version,
-    pub data: T,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "version", content = "data")]
+pub enum VersionedResponse<DenebT, ElectraT> {
+    #[serde(rename = "deneb")]
+    Deneb(DenebT),
+    #[serde(rename = "electra")]
+    Electra(ElectraT),
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub enum Version {
-    #[serde(rename = "deneb")]
-    #[default]
-    Deneb,
-    #[serde(rename = "electra")]
-    Electra,
+impl<DenebT, ElectraT> VersionedResponse<DenebT, ElectraT> {
+    pub fn is_deneb(&self) -> bool {
+        matches!(self, VersionedResponse::Deneb(_))
+    }
+
+    pub fn is_electra(&self) -> bool {
+        matches!(self, VersionedResponse::Electra(_))
+    }
+
+    pub fn version(&self) -> &str {
+        match self {
+            VersionedResponse::Deneb(_) => "deneb",
+            VersionedResponse::Electra(_) => "electra",
+        }
+    }
 }

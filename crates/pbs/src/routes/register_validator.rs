@@ -3,7 +3,7 @@ use std::time::Instant;
 use alloy::rpc::types::beacon::relay::ValidatorRegistration;
 use axum::{extract::State, http::HeaderMap, response::IntoResponse, Json};
 use cb_common::{
-    pbs::{BuilderEvent, EthSpec, REGISTER_VALIDATOR_PATH},
+    pbs::{BuilderEvent, REGISTER_VALIDATOR_PATH},
     utils::get_user_agent,
     DEFAULT_REQUEST_TIMEOUT,
 };
@@ -20,7 +20,7 @@ use crate::{
 };
 
 #[tracing::instrument(skip_all, name = "register_validators", fields(req_id = %Uuid::new_v4()))]
-pub async fn handle_register_validator<S: BuilderApiState, T: EthSpec, A: BuilderApi<S, T>>(
+pub async fn handle_register_validator<S: BuilderApiState, A: BuilderApi<S>>(
     State(state): State<PbsStateGuard<S>>,
     req_headers: HeaderMap,
     Json(registrations): Json<Vec<ValidatorRegistration>>,
@@ -28,7 +28,7 @@ pub async fn handle_register_validator<S: BuilderApiState, T: EthSpec, A: Builde
     let state = state.read().clone();
 
     trace!(?registrations);
-    state.publish_event(BuilderEvent::<T>::RegisterValidatorRequest(registrations.clone()));
+    state.publish_event(BuilderEvent::RegisterValidatorRequest(registrations.clone()));
 
     let ua = get_user_agent(&req_headers);
 
@@ -42,7 +42,7 @@ pub async fn handle_register_validator<S: BuilderApiState, T: EthSpec, A: Builde
     }
 
     if let Err(err) = A::register_validator(registrations, req_headers, state.clone()).await {
-        state.publish_event(BuilderEvent::<T>::RegisterValidatorResponse);
+        state.publish_event(BuilderEvent::RegisterValidatorResponse);
         error!(%err, "all relays failed registration");
 
         let err = PbsClientError::NoResponse;

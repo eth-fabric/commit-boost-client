@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, net::SocketAddr};
+use std::net::SocketAddr;
 
 use alloy::{primitives::B256, rpc::types::beacon::relay::ValidatorRegistration};
 use async_trait::async_trait;
@@ -16,8 +16,7 @@ use tracing::{error, info, trace};
 use url::Url;
 
 use super::{
-    EthSpec, GetHeaderParams, GetHeaderResponse, SignedBlindedBeaconBlock,
-    SubmitBlindedBlockResponse,
+    GetHeaderParams, GetHeaderResponse, SignedBlindedBeaconBlock, SubmitBlindedBlockResponse,
 };
 use crate::{
     config::{load_optional_env_var, BUILDER_URLS_ENV},
@@ -25,13 +24,13 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum BuilderEvent<T: EthSpec> {
+pub enum BuilderEvent {
     GetHeaderRequest(GetHeaderParams),
-    GetHeaderResponse(Box<Option<GetHeaderResponse<T>>>),
+    GetHeaderResponse(Box<Option<GetHeaderResponse>>),
     GetStatusEvent,
     GetStatusResponse,
-    SubmitBlockRequest(Box<SignedBlindedBeaconBlock<T>>),
-    SubmitBlockResponse(Box<SubmitBlindedBlockResponse<T>>),
+    SubmitBlockRequest(Box<SignedBlindedBeaconBlock>),
+    SubmitBlockResponse(Box<SubmitBlindedBlockResponse>),
     MissedPayload {
         /// Hash for the block for which no payload was received
         block_hash: B256,
@@ -70,7 +69,7 @@ impl BuilderEventPublisher {
             .transpose()
     }
 
-    pub fn publish<T: EthSpec>(&self, event: BuilderEvent<T>) {
+    pub fn publish(&self, event: BuilderEvent) {
         for endpoint in self.endpoints.clone() {
             let client = self.client.clone();
             let event = event.clone();
@@ -95,30 +94,21 @@ impl BuilderEventPublisher {
     }
 }
 
-pub struct BuilderEventClient<T, S>
-where
-    T: OnBuilderApiEvent<S> + Clone + Send + Sync + 'static,
-    S: EthSpec + Clone + Send + Sync + 'static + for<'de> Deserialize<'de>,
-{
+pub struct BuilderEventClient<T: OnBuilderApiEvent> {
     pub port: u16,
     pub processor: T,
-    _phantom: PhantomData<S>,
 }
 
-impl<T, S> BuilderEventClient<T, S>
-where
-    T: OnBuilderApiEvent<S> + Clone + Send + Sync + 'static,
-    S: EthSpec + Clone + Send + Sync + 'static + for<'de> Deserialize<'de>,
-{
+impl<T: OnBuilderApiEvent + Clone + Send + Sync + 'static> BuilderEventClient<T> {
     pub fn new(port: u16, processor: T) -> Self {
-        Self { port, processor, _phantom: PhantomData }
+        Self { port, processor }
     }
 
     pub async fn run(self) -> eyre::Result<()> {
         info!("Starting builder events server on port {}", self.port);
 
         let router = axum::Router::new()
-            .route(BUILDER_EVENTS_PATH, post(handle_builder_event::<T, S>))
+            .route(BUILDER_EVENTS_PATH, post(handle_builder_event::<T>))
             .with_state(self.processor);
         let address = SocketAddr::from(([0, 0, 0, 0], self.port));
         let listener = TcpListener::bind(&address).await?;
@@ -129,14 +119,10 @@ where
     }
 }
 
-async fn handle_builder_event<T, S>(
+async fn handle_builder_event<T: OnBuilderApiEvent>(
     State(processor): State<T>,
-    Json(event): Json<BuilderEvent<S>>,
-) -> Response
-where
-    T: OnBuilderApiEvent<S> + Clone + Send + Sync + 'static,
-    S: EthSpec + Clone + Send + Sync + 'static + for<'de> Deserialize<'de>,
-{
+    Json(event): Json<BuilderEvent>,
+) -> Response {
     trace!("Handling builder event");
     processor.on_builder_api_event(event).await;
     StatusCode::OK.into_response()
@@ -144,9 +130,6 @@ where
 
 #[async_trait]
 /// This is what modules are expected to implement to process BuilderApi events
-pub trait OnBuilderApiEvent<T>
-where
-    T: EthSpec + Clone + Send + Sync + 'static + for<'de> Deserialize<'de>,
-{
-    async fn on_builder_api_event(&self, event: BuilderEvent<T>);
+pub trait OnBuilderApiEvent {
+    async fn on_builder_api_event(&self, event: BuilderEvent);
 }

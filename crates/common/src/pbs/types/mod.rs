@@ -15,11 +15,9 @@ pub use execution_payload::{
     EMPTY_TX_ROOT_HASH,
 };
 pub use execution_requests::ExecutionRequests;
-pub use get_header::{
-    ExecutionPayloadHeaderMessage, GetHeaderParams, GetHeaderResponse, SignedExecutionPayloadHeader,
-};
+pub use get_header::{GetHeaderParams, GetHeaderResponse, SignedExecutionPayloadHeader};
 pub use kzg::{
     KzgCommitment, KzgCommitments, KzgProof, KzgProofs, BYTES_PER_COMMITMENT, BYTES_PER_PROOF,
 };
 pub use spec::{DenebSpec, ElectraSpec, EthSpec};
-pub use utils::{Version, VersionedResponse};
+pub use utils::VersionedResponse;

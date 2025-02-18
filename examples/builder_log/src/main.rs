@@ -1,14 +1,13 @@
 use async_trait::async_trait;
 use commit_boost::prelude::*;
-use serde::Deserialize;
 use tracing::{error, info};
 
 #[derive(Debug, Clone)]
 struct LogProcessor;
 
 #[async_trait]
-impl<T: EthSpec + for<'de> Deserialize<'de>> OnBuilderApiEvent<T> for LogProcessor {
-    async fn on_builder_api_event(&self, event: BuilderEvent<T>) {
+impl OnBuilderApiEvent for LogProcessor {
+    async fn on_builder_api_event(&self, event: BuilderEvent) {
         info!(?event, "Received builder event");
     }
 }
@@ -21,10 +20,7 @@ async fn main() -> eyre::Result<()> {
 
             info!(module_id = %config.id, "Starting module");
 
-            let client = BuilderEventClient::<LogProcessor, DenebSpec>::new(
-                config.server_port,
-                LogProcessor,
-            );
+            let client = BuilderEventClient::<LogProcessor>::new(config.server_port, LogProcessor);
 
             if let Err(err) = client.run().await {
                 error!(%err, "Service failed");

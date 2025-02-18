@@ -3,37 +3,83 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     blinded_block_body::BlindedBeaconBlockBody, blobs_bundle::BlobsBundle,
-    execution_payload::ExecutionPayload, spec::EthSpec, utils::VersionedResponse,
+    execution_payload::ExecutionPayload, utils::VersionedResponse, DenebSpec, ElectraSpec, EthSpec,
 };
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 /// Sent to relays in submit_block
-pub struct SignedBlindedBeaconBlock<T: EthSpec> {
-    pub message: BlindedBeaconBlock<T>,
+pub struct SignedBlindedBeaconBlock {
+    pub message: BlindedBeaconBlock,
     pub signature: BlsSignature,
 }
 
-impl<T: EthSpec> SignedBlindedBeaconBlock<T> {
+impl SignedBlindedBeaconBlock {
     pub fn block_hash(&self) -> B256 {
-        self.message.body.execution_payload_header.block_hash
+        match &self.message.body {
+            VersionedBlindedBeaconBlockBody::Deneb(body) => {
+                body.execution_payload_header.block_hash
+            }
+            VersionedBlindedBeaconBlockBody::Electra(body) => {
+                body.execution_payload_header.block_hash
+            }
+        }
     }
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-#[serde(bound = "T: EthSpec")]
-pub struct BlindedBeaconBlock<T: EthSpec> {
+pub struct BlindedBeaconBlock {
     #[serde(with = "serde_utils::quoted_u64")]
     pub slot: u64,
     #[serde(with = "serde_utils::quoted_u64")]
     pub proposer_index: u64,
     pub parent_root: B256,
     pub state_root: B256,
-    pub body: BlindedBeaconBlockBody<T>,
+    pub body: VersionedBlindedBeaconBlockBody,
 }
 
+// TODO: check deserialization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum VersionedBlindedBeaconBlockBody {
+    Electra(BlindedBeaconBlockBody<ElectraSpec>),
+    Deneb(BlindedBeaconBlockBody<DenebSpec>),
+}
+
+impl Default for VersionedBlindedBeaconBlockBody {
+    fn default() -> Self {
+        VersionedBlindedBeaconBlockBody::Deneb(BlindedBeaconBlockBody::default())
+    }
+}
+
+impl VersionedBlindedBeaconBlockBody {
+    pub fn block_hash(&self) -> B256 {
+        match self {
+            VersionedBlindedBeaconBlockBody::Deneb(body) => {
+                body.execution_payload_header.block_hash
+            }
+            VersionedBlindedBeaconBlockBody::Electra(body) => {
+                body.execution_payload_header.block_hash
+            }
+        }
+    }
+
+    pub fn num_commitments(&self) -> usize {
+        match self {
+            VersionedBlindedBeaconBlockBody::Deneb(body) => body.blob_kzg_commitments.len(),
+            VersionedBlindedBeaconBlockBody::Electra(body) => body.blob_kzg_commitments.len(),
+        }
+    }
+
+    pub fn version(&self) -> &str {
+        match self {
+            VersionedBlindedBeaconBlockBody::Deneb(_) => "deneb",
+            VersionedBlindedBeaconBlockBody::Electra(_) => "electra",
+        }
+    }
+}
 /// Returned by relay in submit_block
-#[allow(type_alias_bounds)]
-pub type SubmitBlindedBlockResponse<T: EthSpec> = VersionedResponse<PayloadAndBlobs<T>>;
+pub type SubmitBlindedBlockResponse =
+    VersionedResponse<PayloadAndBlobs<DenebSpec>, PayloadAndBlobs<ElectraSpec>>;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct PayloadAndBlobs<T: EthSpec> {
@@ -41,9 +87,12 @@ pub struct PayloadAndBlobs<T: EthSpec> {
     pub blobs_bundle: Option<BlobsBundle<T>>,
 }
 
-impl<T: EthSpec> SubmitBlindedBlockResponse<T> {
+impl SubmitBlindedBlockResponse {
     pub fn block_hash(&self) -> B256 {
-        self.data.execution_payload.block_hash
+        match self {
+            SubmitBlindedBlockResponse::Deneb(payload) => payload.execution_payload.block_hash,
+            SubmitBlindedBlockResponse::Electra(payload) => payload.execution_payload.block_hash,
+        }
     }
 }
 
@@ -51,11 +100,8 @@ impl<T: EthSpec> SubmitBlindedBlockResponse<T> {
 mod tests {
     use serde_json::json;
 
-    use super::{SignedBlindedBeaconBlock, SubmitBlindedBlockResponse};
-    use crate::{
-        pbs::{DenebSpec, ElectraSpec},
-        utils::test_encode_decode,
-    };
+    use super::SignedBlindedBeaconBlock;
+    use crate::utils::test_encode_decode;
 
     #[test]
     // this is from the builder api spec, but with sync_committee_bits fixed to
@@ -255,7 +301,8 @@ mod tests {
         "signature": "0x1b66ac1fb663c9bc59509846d6ec05345bd908eda73e670af888da41af171505cc411d61252fb6cb3fa0017b679f8bb2305b26a285fa2737f175668d0dff91cc1b66ac1fb663c9bc59509846d6ec05345bd908eda73e670af888da41af171505"
       }"#;
 
-        test_encode_decode::<SignedBlindedBeaconBlock<DenebSpec>>(&data);
+        let x = test_encode_decode::<SignedBlindedBeaconBlock>(&data);
+        println!("{:?}", x.message.body.version());
     }
 
     #[test]
@@ -569,7 +616,8 @@ mod tests {
           "signature": "0x8c3095fd9d3a18e43ceeb7648281e16bb03044839dffea796432c4e5a1372bef22c11a98a31e0c1c5389b98cc6d45917170a0f1634bcf152d896f360dc599fabba2ec4de77898b5dff080fa1628482bdbad5b37d2e64fea3d8721095186cfe50"
         }"#;
 
-        test_encode_decode::<SignedBlindedBeaconBlock<DenebSpec>>(&data);
+        let x = test_encode_decode::<SignedBlindedBeaconBlock>(&data);
+        println!("{:?}", x.message.body.version());
     }
 
     #[test]
@@ -627,7 +675,8 @@ mod tests {
           }
         }).to_string();
 
-        test_encode_decode::<SubmitBlindedBlockResponse<DenebSpec>>(&data);
+        let x = test_encode_decode::<SignedBlindedBeaconBlock>(&data);
+        println!("{:?}", x.message.body.version());
     }
 
     #[test]
@@ -706,6 +755,7 @@ mod tests {
             "signature": "0x94cd72a70a0b424f68145115a9a52f6c8557fb40ec8b67c26cbb9b324b72756624a59e8bbe11b78acbbb8e9c606035d10c0dab9a3f4177d7e6954f8ea1863d0b0b00007fb420b4b4cf52e065bda0ad32af0d3a71bd6938180bab6dd1af754d2f"
         }"#;
 
-        test_encode_decode::<SignedBlindedBeaconBlock<ElectraSpec>>(&data);
+        let x = test_encode_decode::<SignedBlindedBeaconBlock>(&data);
+        println!("{:?}", x.message.body.version());
     }
 }
