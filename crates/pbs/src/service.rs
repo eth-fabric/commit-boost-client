@@ -23,12 +23,7 @@ use crate::{
 pub struct PbsService;
 
 impl PbsService {
-    pub async fn run<S, A>(state: PbsState<S>) -> Result<()>
-    where
-        S: BuilderApiState,
-
-        A: BuilderApi<S>,
-    {
+    pub async fn run<S: BuilderApiState, A: BuilderApi<S>>(state: PbsState<S>) -> Result<()> {
         let addr = state.config.endpoint;
         let events_subs =
             state.config.event_publisher.as_ref().map(|e| e.n_subscribers()).unwrap_or_default();

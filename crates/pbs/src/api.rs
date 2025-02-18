@@ -55,3 +55,4 @@ pub trait BuilderApi<S: BuilderApiState>: 'static {
 }
 
 pub struct DefaultBuilderApi;
+impl BuilderApi<()> for DefaultBuilderApi {}
