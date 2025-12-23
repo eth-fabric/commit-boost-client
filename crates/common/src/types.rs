@@ -45,7 +45,12 @@ pub enum Chain {
     Sepolia,
     Helder,
     Hoodi,
-    Custom { genesis_time_secs: u64, slot_time_secs: u64, genesis_fork_version: ForkVersion },
+    Custom {
+        genesis_time_secs: u64,
+        slot_time_secs: u64,
+        genesis_fork_version: ForkVersion,
+        chain_id: u64,
+    },
 }
 
 pub type ForkVersion = [u8; 4];
@@ -69,11 +74,12 @@ impl std::fmt::Debug for Chain {
             Self::Sepolia => write!(f, "Sepolia"),
             Self::Helder => write!(f, "Helder"),
             Self::Hoodi => write!(f, "Hoodi"),
-            Self::Custom { genesis_time_secs, slot_time_secs, genesis_fork_version } => f
+            Self::Custom { genesis_time_secs, slot_time_secs, genesis_fork_version, chain_id } => f
                 .debug_struct("Custom")
                 .field("genesis_time_secs", genesis_time_secs)
                 .field("slot_time_secs", slot_time_secs)
                 .field("genesis_fork_version", &hex::encode_prefixed(genesis_fork_version))
+                .field("chain_id", chain_id)
                 .finish(),
         }
     }
@@ -89,9 +95,7 @@ impl Chain {
             Chain::Sepolia => KnownChain::Sepolia.id(),
             Chain::Helder => KnownChain::Helder.id(),
             Chain::Hoodi => KnownChain::Hoodi.id(),
-            Chain::Custom { .. } => {
-                unimplemented!("chain id is not supported on custom chains, please file an issue")
-            }
+            Chain::Custom { chain_id, .. } => U256::from(*chain_id),
         }
     }
 
@@ -234,11 +238,11 @@ impl KnownChain {
 
     pub fn slot_time_sec(&self) -> u64 {
         match self {
-            KnownChain::Mainnet |
-            KnownChain::Holesky |
-            KnownChain::Sepolia |
-            KnownChain::Helder |
-            KnownChain::Hoodi => 12,
+            KnownChain::Mainnet
+            | KnownChain::Holesky
+            | KnownChain::Sepolia
+            | KnownChain::Helder
+            | KnownChain::Hoodi => 12,
         }
     }
 }
@@ -271,6 +275,7 @@ pub enum ChainLoader {
         genesis_time_secs: u64,
         slot_time_secs: u64,
         genesis_fork_version: Bytes,
+        chain_id: u64,
     },
 }
 
@@ -285,11 +290,12 @@ impl Serialize for Chain {
             Chain::Sepolia => ChainLoader::Known(KnownChain::Sepolia),
             Chain::Helder => ChainLoader::Known(KnownChain::Helder),
             Chain::Hoodi => ChainLoader::Known(KnownChain::Hoodi),
-            Chain::Custom { genesis_time_secs, slot_time_secs, genesis_fork_version } => {
+            Chain::Custom { genesis_time_secs, slot_time_secs, genesis_fork_version, chain_id } => {
                 ChainLoader::Custom {
                     genesis_time_secs: *genesis_time_secs,
                     slot_time_secs: *slot_time_secs,
                     genesis_fork_version: Bytes::from(*genesis_fork_version),
+                    chain_id: *chain_id,
                 }
             }
         };
@@ -310,12 +316,27 @@ impl<'de> Deserialize<'de> for Chain {
             ChainLoader::Path { genesis_time_secs, path } => {
                 let (slot_time_secs, genesis_fork_version) =
                     load_chain_from_file(path).map_err(serde::de::Error::custom)?;
-                Ok(Chain::Custom { genesis_time_secs, slot_time_secs, genesis_fork_version })
+                Ok(Chain::Custom {
+                    genesis_time_secs,
+                    slot_time_secs,
+                    genesis_fork_version,
+                    chain_id: 0,
+                })
             }
-            ChainLoader::Custom { genesis_time_secs, slot_time_secs, genesis_fork_version } => {
+            ChainLoader::Custom {
+                genesis_time_secs,
+                slot_time_secs,
+                genesis_fork_version,
+                chain_id,
+            } => {
                 let genesis_fork_version: ForkVersion =
                     genesis_fork_version.as_ref().try_into().map_err(serde::de::Error::custom)?;
-                Ok(Chain::Custom { genesis_time_secs, slot_time_secs, genesis_fork_version })
+                Ok(Chain::Custom {
+                    genesis_time_secs,
+                    slot_time_secs,
+                    genesis_fork_version,
+                    chain_id,
+                })
             }
         }
     }
@@ -420,13 +441,17 @@ mod tests {
 
     #[test]
     fn test_load_custom() {
-        let s = r#"chain = { genesis_time_secs = 1, slot_time_secs = 2, genesis_fork_version = "0x01000000" }"#;
+        let s = r#"chain = { genesis_time_secs = 1, slot_time_secs = 2, genesis_fork_version = "0x01000000", chain_id = 1 }"#;
         let decoded: MockConfig = toml::from_str(s).unwrap();
-        assert_eq!(decoded.chain, Chain::Custom {
-            genesis_time_secs: 1,
-            slot_time_secs: 2,
-            genesis_fork_version: [1, 0, 0, 0]
-        })
+        assert_eq!(
+            decoded.chain,
+            Chain::Custom {
+                genesis_time_secs: 1,
+                slot_time_secs: 2,
+                genesis_fork_version: [1, 0, 0, 0],
+                chain_id: 1
+            }
+        )
     }
 
     #[test]
@@ -463,11 +488,16 @@ mod tests {
 
         let decoded: MockConfig = toml::from_str(&s).unwrap();
         assert_eq!(decoded.chain.slot_time_sec(), KnownChain::Holesky.slot_time_sec());
-        assert_eq!(decoded.chain, Chain::Custom {
-            genesis_time_secs: 1,
-            slot_time_secs: KnownChain::Holesky.slot_time_sec(),
-            genesis_fork_version: KnownChain::Holesky.genesis_fork_version()
-        })
+        // Chain ID is correctly overridden by the file
+        assert_eq!(
+            decoded.chain,
+            Chain::Custom {
+                genesis_time_secs: 1,
+                slot_time_secs: KnownChain::Holesky.slot_time_sec(),
+                genesis_fork_version: KnownChain::Holesky.genesis_fork_version(),
+                chain_id: 0
+            }
+        )
     }
 
     #[test]
@@ -483,11 +513,16 @@ mod tests {
 
         let decoded: MockConfig = toml::from_str(&s).unwrap();
         assert_eq!(decoded.chain.slot_time_sec(), KnownChain::Helder.slot_time_sec());
-        assert_eq!(decoded.chain, Chain::Custom {
-            genesis_time_secs: 1,
-            slot_time_secs: KnownChain::Sepolia.slot_time_sec(),
-            genesis_fork_version: KnownChain::Sepolia.genesis_fork_version()
-        })
+        // Chain ID is correctly overridden by the file
+        assert_eq!(
+            decoded.chain,
+            Chain::Custom {
+                genesis_time_secs: 1,
+                slot_time_secs: KnownChain::Sepolia.slot_time_sec(),
+                genesis_fork_version: KnownChain::Sepolia.genesis_fork_version(),
+                chain_id: 0
+            }
+        )
     }
 
     #[test]
@@ -503,11 +538,16 @@ mod tests {
 
         let decoded: MockConfig = toml::from_str(&s).unwrap();
         assert_eq!(decoded.chain.slot_time_sec(), KnownChain::Hoodi.slot_time_sec());
-        assert_eq!(decoded.chain, Chain::Custom {
-            genesis_time_secs: 1,
-            slot_time_secs: KnownChain::Hoodi.slot_time_sec(),
-            genesis_fork_version: KnownChain::Hoodi.genesis_fork_version()
-        })
+        // Chain ID is correctly overridden by the file
+        assert_eq!(
+            decoded.chain,
+            Chain::Custom {
+                genesis_time_secs: 1,
+                slot_time_secs: KnownChain::Hoodi.slot_time_sec(),
+                genesis_fork_version: KnownChain::Hoodi.genesis_fork_version(),
+                chain_id: 0
+            }
+        )
     }
 
     #[test]
@@ -523,10 +563,15 @@ mod tests {
 
         let decoded: MockConfig = toml::from_str(&s).unwrap();
         assert_eq!(decoded.chain.slot_time_sec(), KnownChain::Helder.slot_time_sec());
-        assert_eq!(decoded.chain, Chain::Custom {
-            genesis_time_secs: 1,
-            slot_time_secs: KnownChain::Helder.slot_time_sec(),
-            genesis_fork_version: KnownChain::Helder.genesis_fork_version()
-        })
+        // Chain ID is correctly overridden by the file
+        assert_eq!(
+            decoded.chain,
+            Chain::Custom {
+                genesis_time_secs: 1,
+                slot_time_secs: KnownChain::Helder.slot_time_sec(),
+                genesis_fork_version: KnownChain::Helder.genesis_fork_version(),
+                chain_id: 0
+            }
+        )
     }
 }

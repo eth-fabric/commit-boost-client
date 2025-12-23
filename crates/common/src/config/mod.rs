@@ -67,12 +67,23 @@ impl CommitBoostConfig {
                     } else {
                         load_chain_from_file(path)?
                     };
-                Chain::Custom { genesis_time_secs, slot_time_secs, genesis_fork_version }
+                // Default chain ID for custom chains is 0 unless specified
+                Chain::Custom {
+                    genesis_time_secs,
+                    slot_time_secs,
+                    genesis_fork_version,
+                    chain_id: 0,
+                }
             }
             ChainLoader::Known(known) => Chain::from(known),
-            ChainLoader::Custom { genesis_time_secs, slot_time_secs, genesis_fork_version } => {
+            ChainLoader::Custom {
+                genesis_time_secs,
+                slot_time_secs,
+                genesis_fork_version,
+                chain_id,
+            } => {
                 let genesis_fork_version: ForkVersion = genesis_fork_version.as_ref().try_into()?;
-                Chain::Custom { genesis_time_secs, slot_time_secs, genesis_fork_version }
+                Chain::Custom { genesis_time_secs, slot_time_secs, genesis_fork_version, chain_id }
             }
         };
 
